@@ -1,30 +1,21 @@
-FROM python:3.11-slim-bullseye
+FROM python:3.13-alpine
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    APP_ENV=demo \
-    DEBUG=true
+    APP_ENV=demo
 
 WORKDIR /app
 
-# Test defect for primary scan: additional OS packages increase the attack surface
-# and give Trivy more package metadata to analyze.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        curl \
-        git \
-        openssh-client \
-    && python -m pip install --upgrade pip
-
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir -r requirements.txt \
+    && addgroup -S appgroup \
+    && adduser -S appuser -G appgroup
 
 COPY app ./app
 
-EXPOSE 8000
+USER appuser
 
-# Test defect for primary scan: container runs as root by default.
-USER root
+EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

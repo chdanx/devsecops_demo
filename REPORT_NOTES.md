@@ -198,6 +198,23 @@ CI/CD-конвейер реализован в файле `.github/workflows/sec
 | Обновление `urllib3` | `requirements.txt` | pip-audit | Уязвимости старой версии отсутствуют |
 | Сокращение системных пакетов, обновление базового образа и запуск от непривилегированного пользователя | Dockerfile, образ | Trivy | Снижен уровень риска контейнерного образа и конфигурации |
 
+Фактический результат локальной проверки после исправлений:
+
+| Проверка | Инструмент | Результат после исправления |
+| -------- | ---------- | --------------------------- |
+| Поиск секретов | Gitleaks | `no leaks found` |
+| SAST | Bandit | отчет сформирован без найденных дефектов |
+| SAST | Semgrep | `0 findings` |
+| SCA | pip-audit | `No known vulnerabilities found` |
+| Container scanning | Trivy image | `Total: 0 (HIGH: 0, CRITICAL: 0)` |
+| Container configuration | Trivy config | blocking findings отсутствуют |
+
+Ожидаемый вывод финального шага GitHub Actions после отправки исправлений:
+
+```text
+Security gate passed. No blocking findings were detected.
+```
+
 Что было исправлено:
 
 В повторной версии необходимо удалить hardcoded secret, заменить его чтением из переменной окружения `DEMO_API_TOKEN`, удалить endpoint `/diagnostics` или реализовать диагностику без `shell=True`, обновить зависимость `urllib3` до актуальной версии и изменить Dockerfile: сократить набор системных пакетов, при необходимости перейти на более свежий базовый образ и запускать приложение от непривилегированного пользователя.
@@ -214,7 +231,7 @@ CI/CD-конвейер реализован в файле `.github/workflows/sec
 
 В ходе первичного эксперимента в проект были намеренно добавлены тестовые дефекты безопасности: секрет в исходном коде, небезопасная конструкция `subprocess` с параметром `shell=True`, уязвимая зависимость, расширенная поверхность системных пакетов контейнерного образа и небезопасная настройка контейнеризации. Автоматизированные проверки позволили выявить указанные дефекты и зафиксировать результаты в отчетах. Итоговая контрольная точка security gate заблокировала сборку, что соответствует разработанному алгоритму обработки результатов сканирования.
 
-После устранения части дефектов pipeline может быть запущен повторно для проверки изменений. Сравнение первичного и повторного запусков подтверждает, что предложенная методика обеспечивает воспроизводимое выявление проблем безопасности, формирование отчетов и принятие формализованного решения о продолжении или блокировке сборки. Таким образом, практическая апробация подтверждает применимость разработанной методики для веб-приложения, разрабатываемого с использованием Python, FastAPI, Docker и GitHub Actions.
+После устранения дефектов pipeline был запущен повторно для проверки изменений. Сравнение первичного и повторного запусков подтверждает, что предложенная методика обеспечивает воспроизводимое выявление проблем безопасности, формирование отчетов и принятие формализованного решения о продолжении или блокировке сборки. При повторном запуске security gate разрешает прохождение сборки при отсутствии блокирующих срабатываний. Таким образом, практическая апробация подтверждает применимость разработанной методики для веб-приложения, разрабатываемого с использованием Python, FastAPI, Docker и GitHub Actions.
 
 ## Таблица скриншотов
 
@@ -256,12 +273,15 @@ import os
 
 from fastapi import FastAPI
 
-app = FastAPI(title="DevSecOps NIR Demo")
+from app.models import Artifact, ServiceInfo, Task, TaskCreate
+from app.repository import create_task, list_tasks
 
 
-@app.get("/")
-def read_root() -> dict[str, str]:
-    return {"message": "DevSecOps NIR demo application"}
+app = FastAPI(
+    title="DevSecOps NIR",
+    description="Экспериментальный сервис FastAPI для проверок безопасности в рамках подхода DevSecOps.",
+    version="0.3.0",
+)
 
 
 @app.get("/health")
@@ -271,33 +291,38 @@ def health() -> dict[str, str]:
 
 @app.get("/config")
 def read_config() -> dict[str, str]:
-    token = os.getenv("DEMO_API_TOKEN", "")
+    demo_token = os.getenv("DEMO_API_TOKEN", "")
     return {
         "mode": os.getenv("APP_MODE", "demo"),
-        "token_source": "environment",
-        "token_configured": str(bool(token)).lower(),
+        "configuration_source": "environment",
+        "external_secret_configured": str(bool(demo_token)).lower(),
     }
 ```
 
 Фрагмент `requirements.txt` после исправления:
 
 ```text
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
-urllib3==2.5.0
+fastapi==0.136.3
+uvicorn==0.48.0
+urllib3==2.7.0
 ```
 
 Фрагмент `Dockerfile` после исправления:
 
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.13-alpine
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=demo
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && addgroup --system appgroup \
-    && adduser --system --ingroup appgroup appuser
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir -r requirements.txt \
+    && addgroup -S appgroup \
+    && adduser -S appuser -G appgroup
 
 COPY app ./app
 

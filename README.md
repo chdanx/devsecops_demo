@@ -8,7 +8,7 @@
 - `app/models.py` - Pydantic-модели входных и выходных данных;
 - `app/repository.py` - простое in-memory-хранилище демонстрационных задач;
 - `requirements.txt` - зависимости Python-приложения;
-- `Dockerfile` - сборка контейнерного образа с намеренно расширенной поверхностью анализа для Trivy;
+- `Dockerfile` - сборка контейнерного образа;
 - `.github/workflows/security.yml` - GitHub Actions pipeline с проверками Gitleaks, Bandit, Semgrep, pip-audit и Trivy;
 - `reports/` - каталог для локальных отчетов.
 
@@ -44,7 +44,7 @@ docker build -t devsecops-nir:demo .
 docker run --rm -p 8000:8000 devsecops-nir:demo
 ```
 
-В первичной версии Dockerfile намеренно использует образ `python:3.11-slim-bullseye`, устанавливает несколько системных пакетов и запускает приложение от `root`. Это сделано для демонстрации работы Trivy на контейнерном образе и конфигурации контейнеризации.
+В исправленной версии Dockerfile использует компактный образ `python:3.13-alpine`, не устанавливает лишние системные пакеты и запускает приложение от непривилегированного пользователя `appuser`.
 
 ## Локальные проверки безопасности
 
@@ -93,7 +93,15 @@ trivy config --severity HIGH,CRITICAL --format json --output reports/trivy-confi
 
 ## Исправление тестовых дефектов
 
-1. Удалить hardcoded AWS-like credentials из `app/main.py` и читать значение из переменной окружения `DEMO_API_TOKEN`.
-2. Удалить endpoint `/diagnostics` или заменить `subprocess` на безопасную реализацию без `shell=True`.
-3. Обновить `urllib3==1.26.5` до актуальной версии.
-4. Сократить список системных пакетов, перейти на более свежий базовый образ при необходимости, создать непривилегированного пользователя в `Dockerfile` и запускать приложение от него.
+В текущей версии проекта тестовые дефекты уже исправлены:
+
+1. Hardcoded credentials удалены из `app/main.py`, конфигурация читается через переменные окружения.
+2. Endpoint `/diagnostics` с `subprocess` и `shell=True` удален.
+3. Зависимости обновлены до актуальных версий.
+4. Dockerfile переведен на компактный базовый образ и непривилегированного пользователя.
+
+Ожидаемый результат повторного GitHub Actions запуска:
+
+```text
+Security gate passed. No blocking findings were detected.
+```

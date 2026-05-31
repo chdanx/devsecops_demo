@@ -1,5 +1,4 @@
 import os
-import subprocess
 
 from fastapi import FastAPI
 
@@ -10,12 +9,8 @@ from app.repository import create_task, list_tasks
 app = FastAPI(
     title="DevSecOps NIR",
     description="Экспериментальный сервис FastAPI для проверок безопасности в рамках подхода DevSecOps.",
-    version="0.2.0",
+    version="0.3.0",
 )
-
-# Test defect for primary scan: hardcoded fake AWS-like credentials.
-AWS_ACCESS_KEY_ID = "AKIA3W5ODU6QWKLCMT7A"
-AWS_SECRET_ACCESS_KEY = "mF9bN5xK7qR2tY4uI8oP0aS1dF3gH5jK7lZ9xC"
 
 
 @app.get("/")
@@ -23,7 +18,7 @@ def read_root() -> ServiceInfo:
     return ServiceInfo(
         name_owner="Danila Badetskiy",
         name="DevSecOps NIR Demo",
-        version="0.2.0",
+        version="0.3.0",
         description="Минималистичный API, используемый в качестве объекта для автоматизированных проверок безопасности.",
     )
 
@@ -35,10 +30,11 @@ def health() -> dict[str, str]:
 
 @app.get("/config")
 def read_config() -> dict[str, str]:
+    demo_token = os.getenv("DEMO_API_TOKEN", "")
     return {
         "mode": os.getenv("APP_MODE", "demo"),
-        "token_source": "hardcoded",
-        "token_preview": AWS_ACCESS_KEY_ID[:6],
+        "configuration_source": "environment",
+        "external_secret_configured": str(bool(demo_token)).lower(),
     }
 
 
@@ -80,15 +76,3 @@ def get_security_artifacts() -> list[Artifact]:
             tool="Trivy",
         ),
     ]
-
-
-@app.get("/diagnostics")
-def diagnostics(host: str = "127.0.0.1") -> dict[str, str]:
-    result = subprocess.check_output(
-        f"echo diagnostics for {host}",
-        shell=True,
-        text=True,
-        stderr=subprocess.STDOUT,
-        timeout=3,
-    )
-    return {"result": result}
